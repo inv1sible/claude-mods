@@ -46,3 +46,23 @@ test('status line and pane show limits, pace, context and cost', async ($, on) =
   expect((await ui.find({ type: 'Text', text: /^Tools/ }))?.text).toBe('Tools: 1')
   await ui.unmount()
 })
+
+test('where no pane is placed, /usage-meter draws a card in the chat', async ($, on) => {
+  let placedId = ''
+  on('clock.now', () => ({ value: NOW }))
+  on('session.usage', () => ({ value: USAGE }))
+  on('session.surfaces', () => ({ value: ['mobile'] }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.open', () => ({ value: { isPlaced: false, reason: 'mobile places no panes' } }))
+  on('ui.place', (_, e) => ((placedId = (e as { id: string }).id), { value: { isPlaced: true, requestId: 'r1' } }))
+
+  const ran = await $.command.run({ command: 'usage-meter', args: '' })
+  expect(String((ran as { text?: string }).text)).toContain('pane not placed: mobile places no panes')
+
+  const ui = await $.ui.mount({
+    plugin: 'usage-meter', component: 'Placed', requestId: 'r1', surface: 'mobile',
+    props: { id: placedId, plugin: 'usage-meter' },
+  })
+  expect((await ui.find({ type: 'Text', text: /^Cost/ }))?.text).toBe('Cost: $3.00  ($1.50/h)')
+  await ui.unmount()
+})

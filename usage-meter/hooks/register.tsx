@@ -1,9 +1,10 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, SessionRateLimit, SessionUsage } from 'claude-code'
+import type { EngineInterface, Register, RenderInput, SessionRateLimit, SessionUsage } from 'claude-code'
 
 import type { Breakdown, Snap, Stats } from '../types'
 
 const PANE = 'usage-meter'
+const CARD = 'usage-meter-card-' // + timestamp: a card in the transcript where no pane is placed
 const TITLE = 'Usage'
 const HOUR = 3_600_000
 const WINDOW_MS: Record<string, number> = { five_hour: 5 * HOUR, seven_day: 168 * HOUR }
@@ -84,7 +85,7 @@ const refreshBreakdown = async ($: EngineInterface) => {
   // "summary" is a local estimate: no token-count API calls.
   const u = await $.session.usage({ breakdown: 'summary' })
   const b = u.context.breakdown
-  if (!b) return
+  if (!b) return refresh($, u)
   const cats = b.categories
     .filter(c => c.kind === 'used' && c.tokens > 0)
     .sort((a, z) => z.tokens - a.tokens)
@@ -112,8 +113,13 @@ export const register: Register = on => {
 
   on('command.run', { command: 'usage-meter' }, async $ => {
     await refreshBreakdown($).catch(() => undefined)
-    await $.ui.open({ id: PANE, title: TITLE })
-    return { text: statusText(await read($, snap), await $.clock.now()) ?? 'No usage yet.' }
+    const opened = await $.ui.open({ id: PANE, title: TITLE })
+    const line = statusText(await read($, snap), await $.clock.now()) ?? 'No usage yet.'
+    if (opened.isPlaced) return { text: line }
+    // No surface seated the pane (e.g. the mobile app): draw a card in the chat instead.
+    const placed = await $.ui.place({ id: `${CARD}${await $.clock.now()}` })
+    const surfaces = (await $.session.surfaces()).join(', ') || 'none'
+    return { text: `${line}\n(pane not placed: ${opened.reason}; surfaces: ${surfaces}; card ${placed.isPlaced ? 'placed' : 'not placed'})` }
   }).catch(($, e, next) => (next.called ? next(e) : { text: 'usage-meter: could not open the pane.' }))
 
   on('session.measure', async ($, e, next) => {
@@ -156,7 +162,14 @@ export const register: Register = on => {
     return ran
   }).catch(($, e, next) => next(e)) // a stats failure must never block a tool
 
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+  on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => draw($, e, e.props.placement === 'widget'))
+
+  on('ui.render', { component: 'Placed' }, ($, e, next) =>
+    e.props.id.startsWith(CARD) ? draw($, e, false) : next(e),
+  )
+}
+
+const draw = async ($: EngineInterface, e: RenderInput<'Pane' | 'Placed'>, compact: boolean) => {
     const { Box, Text, Progress, Button } = $.ui.resolve(e)
     await read($, tick) // subscribe: redraw each minute
     const s = await read($, snap)
@@ -179,7 +192,7 @@ export const register: Register = on => {
     const ctxPct = s.percent ?? 0
 
     // Compact form for the desktop app's minimized widget.
-    if (e.props.placement === 'widget') {
+    if (compact) {
       return (
         <Box flexDirection="column">
           {limits.map(l => (
@@ -237,5 +250,4 @@ export const register: Register = on => {
         <Button key="refresh" label="Refresh" onPress={() => void refreshBreakdown($).catch(() => undefined)} />
       </Box>
     )
-  })
 }
