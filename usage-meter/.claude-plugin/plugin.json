@@ -1,0 +1,1 @@
+{ "name": "usage-meter", "version": "0.1.0", "description": "5h/weekly rate limits, context fill, cost, tokens and tool stats in a pane and the status line", "license": "MIT", "author": { "name": "inv1sible" }, "types": "./types/index.d.ts" }

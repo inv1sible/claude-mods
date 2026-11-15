@@ -1,0 +1,8 @@
+{
+  "name": "claude-mods",
+  "description": "Claude Code mods: usage-meter and more",
+  "owner": { "name": "inv1sible" },
+  "plugins": [
+    { "name": "usage-meter", "source": "./usage-meter", "description": "5h/weekly rate limits, context fill, cost, tokens and tool stats in a pane and the status line" }
+  ]
+}
