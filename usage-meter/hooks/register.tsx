@@ -96,6 +96,17 @@ const refreshBreakdown = async ($: EngineInterface) => {
   await refresh($, u)
 }
 
+/** Opens the pane; where no surface places it, posts a card in the chat. Returns a one-line summary. */
+const show = async ($: EngineInterface) => {
+  await refreshBreakdown($).catch(() => undefined)
+  const opened = await $.ui.open({ id: PANE, title: TITLE })
+  const line = statusText(await read($, snap), await $.clock.now()) ?? 'No usage yet.'
+  if (opened.isPlaced) return line
+  const placed = await $.ui.place({ id: `${CARD}${await $.clock.now()}` })
+  const surfaces = (await $.session.surfaces()).join(', ') || 'none'
+  return `${line}\n(pane not placed: ${opened.reason}; surfaces: ${surfaces}; card ${placed.isPlaced ? 'placed' : 'not placed'})`
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
@@ -111,16 +122,14 @@ export const register: Register = on => {
     return started
   })
 
-  on('command.run', { command: 'usage-meter' }, async $ => {
-    await refreshBreakdown($).catch(() => undefined)
-    const opened = await $.ui.open({ id: PANE, title: TITLE })
-    const line = statusText(await read($, snap), await $.clock.now()) ?? 'No usage yet.'
-    if (opened.isPlaced) return { text: line }
-    // No surface seated the pane (e.g. the mobile app): draw a card in the chat instead.
-    const placed = await $.ui.place({ id: `${CARD}${await $.clock.now()}` })
-    const surfaces = (await $.session.surfaces()).join(', ') || 'none'
-    return { text: `${line}\n(pane not placed: ${opened.reason}; surfaces: ${surfaces}; card ${placed.isPlaced ? 'placed' : 'not placed'})` }
-  }).catch(($, e, next) => (next.called ? next(e) : { text: 'usage-meter: could not open the pane.' }))
+  on('command.run', { command: 'usage-meter' }, async $ => ({ text: await show($) }))
+    .catch(($, e, next) => (next.called ? next(e) : { text: 'usage-meter: could not open the pane.' }))
+
+  // Some clients (the mobile app) send a mod's slash command as a plain prompt:
+  // catch it here, show the usage, and keep it from reaching the model.
+  on('prompt.submit', async ($, e, next) =>
+    !e.command && /^\/?usage-meter$/i.test(e.text.trim()) ? { drop: await show($) } : next(e),
+  ).catch(($, e, next) => next(e)) // never block a prompt on a failure here
 
   on('session.measure', async ($, e, next) => {
     await update($, snap, prev => ({

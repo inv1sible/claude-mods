@@ -56,7 +56,7 @@ test('where no pane is placed, /usage-meter draws a card in the chat', async ($,
   on('ui.open', () => ({ value: { isPlaced: false, reason: 'mobile places no panes' } }))
   on('ui.place', (_, e) => ((placedId = (e as { id: string }).id), { value: { isPlaced: true, requestId: 'r1' } }))
 
-  const ran = await $.command.run({ command: 'usage-meter', args: '' })
+  const ran = await $.command.run({ command: 'usage-meter', args: '' } as never)
   expect(String((ran as { text?: string }).text)).toContain('pane not placed: mobile places no panes')
 
   const ui = await $.ui.mount({
@@ -65,4 +65,19 @@ test('where no pane is placed, /usage-meter draws a card in the chat', async ($,
   })
   expect((await ui.find({ type: 'Text', text: /^Cost/ }))?.text).toBe('Cost: $3.00  ($1.50/h)')
   await ui.unmount()
+})
+
+test('a typed "/usage-meter" prompt that is not a command is caught and kept from the model', async ($, on) => {
+  on('clock.now', () => ({ value: NOW }))
+  on('session.usage', () => ({ value: USAGE }))
+  on('session.surfaces', () => ({ value: ['mobile'] }))
+  on('ui.status', () => ({ value: undefined }))
+  on('ui.open', () => ({ value: { isPlaced: false, reason: 'mobile places no panes' } }))
+  on('ui.place', () => ({ value: { isPlaced: true, requestId: 'r1' } }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+
+  const caught = await $.prompt.submit({ text: '/usage-meter' } as never)
+  expect(String((caught as { drop?: string }).drop)).toContain('5h 60%')
+  const other = await $.prompt.submit({ text: 'hello' } as never)
+  expect((other as { text?: string }).text).toBe('hello')
 })
